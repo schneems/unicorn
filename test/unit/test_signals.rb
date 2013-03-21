@@ -70,6 +70,41 @@ class SignalsTest < Test::Unit::TestCase
     assert((Time.now - t0) < 60)
   end
 
+  def test_workers_finish_processing_requests_after_term
+    ENV['TERM_CHILD'] = "1"
+
+    rd, wr = IO.pipe
+    pid = fork {
+      rd.close
+      app = lambda { |env| sleep 2; [ 200, {}, [] ] }
+      redirect_test_io { HttpServer.new(app, @server_opts).start.join }
+    }
+    wr.close
+    wait_workers_ready("test_stderr.#{pid}.log", 1)
+    sock = TCPSocket.new('127.0.0.1', @port)
+    wait_master_ready("test_stderr.#{pid}.log")
+    sock.syswrite("GET / HTTP/1.0\r\n\r\n")
+
+    Process.kill(:TERM, pid)
+
+    #Process.kill(:QUIT, pid) # this passes (minus the catchall failure), TERM should
+
+    Process.waitpid(pid)
+    buf = nil
+
+    assert_match %r{HTTP/1.1 200 OK}, sock.sysread(4096)
+
+    assert_raises(EOFError,Errno::ECONNRESET,Errno::EPIPE,Errno::EINVAL,
+                  Errno::EBADF) do
+      buf = sock.sysread(4096)
+    end
+    assert_nil buf
+
+    # this is a horrible hack to force the stdout to sync, if i take it out...i get no puts, no clue why.
+  ensure
+    ENV['TERM_CHILD'] = nil
+  end
+
   def test_sleepy_kill
     rd, wr = IO.pipe
     pid = fork {

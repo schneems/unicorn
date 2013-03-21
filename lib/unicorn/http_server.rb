@@ -279,7 +279,7 @@ class Unicorn::HttpServer
       when :QUIT # graceful shutdown
         break
       when :TERM, :INT # immediate shutdown
-        stop(false)
+        stop(ENV['TERM_CHILD'])
         break
       when :USR1 # rotate logs
         logger.info "master reopening logs..."
